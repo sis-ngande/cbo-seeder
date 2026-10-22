@@ -1,0 +1,47 @@
+"""CBO Seeder launcher.
+
+    python run cbo                              open the web page
+    python run cbo --port 8600                  open the web page on another port
+    python run cbo --team pitCrew               run all 3 steps for a saved team (TEAM_pitCrew in .env)
+    python run cbo --users user1@sisfirst.com,...   run all 3 steps for these users
+    python run cbo --team pitCrew --only ema    run only some steps
+    python run cbo --help                       list the terminal options
+"""
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+VENV_PYTHON = HERE / ".venv" / "Scripts" / "python.exe"
+USAGE = __doc__.strip()
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] != "cbo":
+        print(USAGE)
+        return 1
+
+    if not VENV_PYTHON.exists():
+        print("The .venv folder is missing. Set it up first, see README.md.")
+        return 1
+
+    # Always run with the project's .venv, even when started with the global "python"
+    options = args[1:]
+    if options[:1] == ["--port"]:
+        if len(options) != 2 or not options[1].isdigit():
+            print("Give one port number, e.g. python run cbo --port 8600")
+            return 1
+        command = ["-m", "streamlit", "run", "ui.py", "--server.port", options[1]]
+    elif not options:
+        command = ["-m", "streamlit", "run", "ui.py"]
+    else:
+        command = ["app.py", *options]
+    try:
+        return subprocess.call([str(VENV_PYTHON), *command], cwd=HERE)
+    except KeyboardInterrupt:
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

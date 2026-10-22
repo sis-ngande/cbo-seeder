@@ -1,0 +1,21 @@
+[client]
+# Hide the Deploy button and the developer options in the top-right menu
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#3d5bc9"
+backgroundColor = "#f4f6fa"
+# Filled input boxes, like the Ignition seeder
+secondaryBackgroundColor = "#f1f4f9"
+textColor = "#111827"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+headingFontWeights = 700
+baseRadius = "10px"
+buttonRadius = "10px"
+borderColor = "#e5e9f0"
+showWidgetBorder = false
+codeBackgroundColor = "#0f172a"

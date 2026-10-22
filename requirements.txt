@@ -1,0 +1,6 @@
+msal
+requests
+python-dotenv
+streamlit
+pandas
+playwright  # after installing, run once: playwright install chromium

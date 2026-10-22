@@ -1,0 +1,23 @@
+# Secrets: login settings stay on your machine
+.env
+.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Tool and editor working folders
+.claude/
+.working/
+.vscode/
+.streamlit/secrets.toml
+
+# EMA login failure screenshots
+*.png
+
+# Per-machine page settings (recent environments)
+localSettings.json
+
+# Teams now live in .env (emails must not be committed)
+teams.json
