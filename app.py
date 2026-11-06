@@ -1,24 +1,22 @@
-import os
-import re
 from urllib.parse import urlparse
 
 import msal
 import requests
-from dotenv import dotenv_values, load_dotenv, set_key, unset_key
+from dotenv import load_dotenv
 
 import testData
 
-load_dotenv()  # reads settings from the .env file next to this script
+load_dotenv(testData.ENV_FILE)  # reads settings from the .env file next to this script
 
 TENANT_ID = "1f8aefe1-eac8-4532-9c55-115d46c686ee"
-DEFAULT_PORTAL_URL = "https://portalapp-web-367287e2-centralindia.siscompletedev.cloud"
+CLIENT_ID = "090066bd-d788-4f22-922e-bb51d26b3619"  # Smart Portal's Azure AD app (public, not a secret)
 
 # Enterprises that must never be deleted
 KEEP_ENTERPRISE_NAMES = {"DevEnterprise"}
 KEEP_ENTERPRISE_IDS = {1}
 
-# Users that must never be deleted (PROTECTED_USERS in .env, plus the .env login account; lowercase)
-KEEP_USER_EMAILS = {email.casefold() for email in testData.envEmails("PROTECTED_USERS") + testData.envEmails("PORTAL_USER")}
+# Users that must never be deleted (lowercase). The logged-in account is always kept too.
+KEEP_USER_EMAILS = {email.casefold() for email in testData.PROTECTED_USER_EMAILS}
 
 
 # ---------- Login ----------
@@ -39,23 +37,22 @@ def getEnvironmentId(portalUrl):
 
 def getAzureAdToken(username, password):
     """Sign in to Azure AD with the given username/password and return an access token."""
-    client_id = os.environ["CLIENT_ID"].strip()
-    app = msal.PublicClientApplication(client_id, authority=f"https://login.microsoftonline.com/{TENANT_ID}")
-    result = app.acquire_token_by_username_password(username, password, scopes=[f"{client_id}/.default"])
+    app = msal.PublicClientApplication(CLIENT_ID, authority=f"https://login.microsoftonline.com/{TENANT_ID}")
+    result = app.acquire_token_by_username_password(username, password, scopes=[f"{CLIENT_ID}/.default"])
     if "access_token" not in result:
         raise RuntimeError(f"Login failed: {result.get('error_description') or result.get('error')}")
     return result["access_token"]
 
 
-def createPortalSession(portalUrl=DEFAULT_PORTAL_URL, username=None, password=None):
-    """Return a requests session carrying the Azure AD token and the portal session ID."""
+def createPortalSession(portalUrl, username, password):
+    """Return a requests session carrying the Azure AD token and the portal session ID.
+
+    The password comes from the page's login form and is never saved."""
     session = requests.Session()
     session.apiBase = getApiBase(portalUrl)
     session.envId = getEnvironmentId(portalUrl)
-    session.username = username or os.environ["PORTAL_USER"]
-    session.headers["Authorization"] = (
-        f"Bearer {getAzureAdToken(session.username, password or os.environ['PORTAL_PASSWORD'])}"
-    )
+    session.username = username
+    session.headers["Authorization"] = f"Bearer {getAzureAdToken(username, password)}"
 
     # Portal login: exchange the Azure AD token for a session ID, sent as the "token" header on every call
     response = session.get(f"{session.apiBase}/ActiveDirectoryAuthentication/v01/Login")
@@ -136,14 +133,20 @@ def deleteEnterprises(session, log=print):
 
 # ---------- Users ----------
 
-def getUsers(session, log=print):
-    """Return the list of all users."""
+def findUsers(session, emails, log=print):
+    """Return {typed email (lowercase): [its Smart Portal users]} for the typed emails only.
+
+    The API has no lookup by email, so this reads the user list once to get the IDs, keeps only the typed emails
+    and drops everyone else straight away: other users are never logged, counted or kept."""
+    wanted = {e.strip().casefold() for e in emails}
     url = f"{usersApi(session)}/All"
-    users = getJson(session, url)
-    log(f"Users ({len(users)}): status 200 [GET {url}]")
-    for user in users:
-        log(f"  ID {user.get('userId')}: {user.get('email')}")
-    return users
+    found = {}
+    for user in getJson(session, url):
+        email = (user.get("email") or "").strip().casefold()
+        if email in wanted:
+            found.setdefault(email, []).append(user)
+    log(f"Look up {len(wanted)} typed users: {len(found)} already exist: status 200 [GET {url}]")
+    return found
 
 
 def shouldKeepUser(user, session=None):
@@ -166,21 +169,13 @@ def deleteUser(session, user, log=print):
     return deleteAndReport(session, f"{usersApi(session)}/{user['userId']}", label, log)
 
 
-def isTeamUser(user, onlyEmails):
-    """True if onlyEmails is None (everyone) or the user's email is in it, ignoring case."""
-    if onlyEmails is None:
-        return True
-    return (user.get("email") or "").strip().casefold() in {e.strip().casefold() for e in onlyEmails}
-
-
-def deleteUsers(session, log=print, onlyEmails=None):
-    """Delete users except the protected ones. Returns (deleted, failed) counts.
-
-    onlyEmails: delete only these users (e.g. one team); None deletes every unprotected user, like Cypress.
-    """
+def deleteUsers(session, log=print, onlyEmails=()):
+    """Delete only the given users (the team typed on the page), never protected ones. Returns (deleted, failed) counts."""
     deleted = failed = 0
-    for user in getUsers(session, log):
-        if not shouldKeepUser(user, session) and isTeamUser(user, onlyEmails):
+    for users in findUsers(session, onlyEmails, log).values():
+        for user in users:
+            if shouldKeepUser(user, session):
+                continue
             if deleteUser(session, user, log):
                 deleted += 1
             else:
@@ -197,18 +192,24 @@ def sendAndReport(session, method, url, label, body=None, log=print):
     return response if response.ok else None
 
 
-def createUsers(session, emails=testData.USER_EMAILS, log=print):
-    """Add each email as a user with the default permission group, skipping active users. Returns (created, failed)."""
-    activeEmails = {
-        (user.get("email") or "").casefold()
-        for user in getJson(session, f"{usersApi(session)}/All")
-        if user.get("isActive")
-    }
+def createUsers(session, emails=(), log=print):
+    """Create each typed email as a fresh user with the default permission group. Returns (created, failed).
+
+    A user that already exists is deleted first, then created again. Protected users and the login account are
+    never deleted: an active one is kept as it is."""
+    existing = findUsers(session, emails, log)
     created = failed = 0
     for email in emails:
-        if email.casefold() in activeEmails:
-            log(f"Skip user {email}: already active")
-            continue
+        matches = existing.get(email.strip().casefold(), [])
+        if any(shouldKeepUser(user, session) for user in matches):
+            if any(user.get("isActive") for user in matches):
+                log(f"Skip user {email}: protected, kept as it is")
+                continue
+        elif matches:
+            log(f"User {email} already exists: deleting it first")
+            if not all([deleteUser(session, user, log) for user in matches]):
+                failed += 1
+                continue
 
         response = sendAndReport(session, "POST", f"{usersApi(session)}/", f"Add user {email}",
                                  {"lastKnownGoodEmail": "", "email": email}, log)
@@ -254,7 +255,7 @@ def getTenantIds(enterpriseName):
     return [1, 2]
 
 
-def createEnterprise(session, enterpriseName, adminEmails=testData.USER_EMAILS, log=print, tenantIds=None):
+def createEnterprise(session, enterpriseName, adminEmails=(), log=print, tenantIds=None):
     """Create one enterprise with its admin users, tenants and Auth0 IDP. Returns True if every call succeeded."""
     response = sendAndReport(session, "POST", f"{enterpriseApi(session)}/Enterprises/New/",
                              f"Create enterprise {enterpriseName}",
@@ -284,7 +285,7 @@ def createEnterprise(session, enterpriseName, adminEmails=testData.USER_EMAILS, 
     return ok
 
 
-def createSmartPortalData(session, emails=testData.USER_EMAILS, enterpriseNames=testData.ENTERPRISE_NAMES, log=print,
+def createSmartPortalData(session, emails=(), enterpriseNames=testData.ENTERPRISE_NAMES, log=print,
                           tenantsByName=None):
     """Run all Smart Portal precondition steps in Cypress order. Returns a summary dict."""
     usersCreated, usersFailed = createUsers(session, emails, log)
@@ -307,128 +308,10 @@ def createSmartPortalData(session, emails=testData.USER_EMAILS, enterpriseNames=
     }
 
 
-# ---------- Main ----------
-
-STEPS = ["delete", "create", "ema"]
-TEAM_PREFIX = "TEAM_"
-
-
-def teamSettingName(teamName):
-    """The .env setting for a team, e.g. "Pit Crew" -> TEAM_Pit_Crew."""
-    return TEAM_PREFIX + re.sub(r"[^A-Za-z0-9]+", "_", teamName.strip()).strip("_")
-
-
-def loadTeams():
-    """Saved teams from .env (TEAM_<name>=email1,email2): {team name: [emails]}. Read fresh, so saves show at once."""
-    return {
-        key[len(TEAM_PREFIX):].replace("_", " "): [e.strip() for e in (value or "").split(",") if e.strip()]
-        for key, value in dotenv_values(testData.ENV_FILE).items()
-        if key.startswith(TEAM_PREFIX) and len(key) > len(TEAM_PREFIX)
-    }
-
-
-def saveTeam(teamName, emails):
-    """Save a team to .env, replacing a team with the same name."""
-    set_key(testData.ENV_FILE, teamSettingName(teamName), ",".join(emails), quote_mode="never")
-
-
-def deleteTeam(teamName):
-    """Remove a team from .env."""
-    unset_key(testData.ENV_FILE, teamSettingName(teamName), quote_mode="never")
-
-
-def getTeamEmails(teamName=None, users=None):
-    """Return the team's emails from --users (comma separated) or --team (a TEAM_<name> setting in .env)."""
-    if users:
-        emails = [e.strip() for e in users.split(",") if e.strip()]
-    else:
-        teams = loadTeams()
-        wanted = teamSettingName(teamName or "").casefold()
-        match = next((name for name in teams if teamSettingName(name).casefold() == wanted), None)
-        if not match:
-            raise SystemExit(f"Team '{teamName}' not found. Saved teams: {', '.join(teams) or 'none'}")
-        emails = teams[match]
-    if not emails:
-        raise SystemExit("The team has no users.")
-    return emails
-
-
-def parseArgs():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Reset Smart Portal and EMA test data for one team: delete old data, create Smart Portal data, "
-                    "set up EMA. Only the team's users are deleted, created and mapped.")
-    team = parser.add_mutually_exclusive_group(required=True)
-    team.add_argument("--team", help="Saved team name (TEAM_<name> in .env), e.g. --team Pit-Crew")
-    team.add_argument("--users", help="Comma-separated emails, e.g. --users user1@sisfirst.com,user2@sisfirst.com")
-    parser.add_argument("--only", nargs="+", choices=STEPS, help="Run only these steps, e.g. --only ema")
-    parser.add_argument("--skip", nargs="+", choices=STEPS, default=[], help="Skip these steps, e.g. --skip delete")
-    parser.add_argument("--portal-url", default=os.environ.get("PORTAL_URL", DEFAULT_PORTAL_URL),
-                        help="Smart Portal URL of the environment (default: PORTAL_URL in .env, else 367287e2 dev)")
-    parser.add_argument("--show-browser", action="store_true", help="Show the browser during EMA login")
-    return parser.parse_args()
-
-
-def main():
-    import ema
-
-    args = parseArgs()
-    emails = getTeamEmails(args.team, args.users)
-    steps = [step for step in (args.only or STEPS) if step not in args.skip]
-    username, password = os.environ["PORTAL_USER"], os.environ["PORTAL_PASSWORD"]
-    summary = {}
-
-    print(f"Environment {getEnvironmentId(args.portal_url)}  |  team: {args.team or 'custom'} "
-          f"({len(emails)} users)  |  steps: {', '.join(steps)}")
-    session = createPortalSession(args.portal_url, username, password)
-
-    # 1. delete all test enterprises, and the team's users (protected users are always kept)
-    if "delete" in steps:
-        print("\n===== 1. Delete old test data =====")
-        enterprisesDeleted, enterprisesFailed = deleteEnterprises(session)
-        usersDeleted, usersFailed = deleteUsers(session, onlyEmails=emails)
-        summary["Delete"] = (f"{enterprisesDeleted} enterprises, {usersDeleted} users deleted  |  "
-                             f"{enterprisesFailed + usersFailed} failed")
-        if enterprisesFailed + usersFailed:
-            # Old data is still there; creating now would make duplicates
-            steps = ["delete"]
-            summary["Stopped"] = "some deletes failed, so create and EMA were not run"
-
-    # 2. create smart portal data
-    if "create" in steps:
-        print("\n===== 2. Create Smart Portal data =====")
-        result = createSmartPortalData(session, emails)
-        summary["Smart Portal"] = (
-            f"{result['usersCreated']} users, {result['enterprisesCreated']} enterprises created  |  "
-            f"{result['usersFailed'] + result['enterprisesFailed']} failed  |  "
-            f"grant access {'OK' if result['accessGranted'] else 'FAILED'}  |  "
-            f"org sync {'OK' if result['organizationsSynced'] else 'FAILED'}"
-        )
-        if result["enterprisesFailed"]:
-            # EMA login needs every enterprise and its IDP to exist
-            steps = [step for step in steps if step != "ema"]
-            summary["Stopped"] = "some enterprises failed to create, so EMA was not run"
-
-    # 3. set up EMA for the State enterprises
-    if "ema" in steps:
-        print("\n===== 3. Set up EMA =====")
-        results = ema.setupEma(args.portal_url, username, password, emails=emails, headless=not args.show_browser)
-        summary["EMA"] = "  |  ".join(
-            f"{'OK' if isEmaOk(result) else 'FAILED'} {name.replace(' State Enterprise', '')}"
-            for name, result in results.items()
-        )
-
-    print("\n===== Summary =====")
-    for step, text in summary.items():
-        print(f"{step + ':':<14}{text}")
-
+# ---------- Results ----------
 
 def isEmaOk(result):
     """True if an EMA setup result has no error and nothing failed."""
     return ("error" not in result and result["profilesCreated"] and not result["groupsFailed"]
             and not result["usersFailed"] and result["limitsSet"])
 
-
-if __name__ == "__main__":
-    main()

@@ -3,13 +3,11 @@
 Run with:  python run cbo     (or: streamlit run ui.py)
 """
 import importlib
-import json
 import os
 import time
 import re
 from datetime import datetime
 from html import escape
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -24,8 +22,6 @@ for module in (testData, app, ema):
 
 st.set_page_config(page_title="CBO Seeder", page_icon="🧪", layout="centered")
 
-HERE = Path(__file__).parent
-SETTINGS_FILE = HERE / "localSettings.json"
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@sisfirst\.com$", re.IGNORECASE)
 STEPS = {
     "delete": ("Delete old test data", "Enterprises, and your team's users"),
@@ -130,40 +126,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ---------- Saved files ----------
+# ---------- Teams ----------
 
-def readJson(path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
-
-
-def writeJson(path, data):
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+BUILT_IN_TEAM = "Everyone (Cypress list)"
 
 
 def loadTeams():
-    """Saved teams from .env; when there are none, the DEFAULT_USERS list from .env as a built-in team."""
-    return app.loadTeams() or ({"Everyone (Cypress list)": testData.USER_EMAILS} if testData.USER_EMAILS else {})
-
-
-def rememberEnvironment(portalUrl, emaUrl):
-    settings = readJson(SETTINGS_FILE, {})
-    recent = [{"portalUrl": portalUrl, "emaUrl": emaUrl}]
-    recent += [r for r in settings.get("recent", []) if isinstance(r, dict) and r.get("portalUrl") != portalUrl]
-    settings["recent"] = recent[:6]
-    writeJson(SETTINGS_FILE, settings)
+    """The built-in team from testData, plus teams saved in this page session (kept in memory only, never on disk)."""
+    return ({BUILT_IN_TEAM: testData.USER_EMAILS} if testData.USER_EMAILS else {}) | state.teams
 
 
 def addLog(line):
-    """Add a line to the page log and print the same line in the terminal."""
+    """Add a line to the page log. Never printed to the console: lines hold emails, and server logs would keep them."""
     stamped = f"{datetime.now():%H:%M:%S}  {line}"
     state.log.append(stamped)
-    try:
-        print(stamped, flush=True)
-    except (OSError, UnicodeError):
-        pass
     return stamped
 
 
@@ -179,6 +155,8 @@ state.setdefault("credentials", None)
 state.setdefault("log", [])
 state.setdefault("results", {})
 state.setdefault("lastRun", None)
+# Saved teams live only in this session's memory: gone when the page is closed or refreshed
+state.setdefault("teams", {})
 # The team box starts empty: every run is for the users you pick or paste, never a default list
 state.setdefault("teamUsers", "")
 def freshEnterpriseTable():
@@ -297,7 +275,7 @@ def expectedCalls(step, plan):
         # Two list calls, the team's users, and a guess at the enterprises left from the last run
         return 2 + users + len(testData.EMA_ENTERPRISES)
     if step == "create":
-        return 2 * users + 3 + sum(2 + users + len(plan["tenantsByName"][n]) for n in plan["createNames"])
+        return 3 * users + 3 + sum(2 + users + len(plan["tenantsByName"][n]) for n in plan["createNames"])
     groups = sum(len(testData.EMA_ENTERPRISES[n]["groups"]) for n in plan["emaNames"])
     return len(plan["emaNames"]) * (27 + users + 1) + 2 * groups
 
@@ -353,19 +331,11 @@ with st.container(border=True, key="card-environment"):
     # Once connected, the login form folds away; open it to switch environment or account
     loginBox = st.expander("Change environment or account", expanded=False) if creds else st.container()
     with loginBox:
-        recent = [r for r in readJson(SETTINGS_FILE, {}).get("recent", []) if isinstance(r, dict)]
-        last = recent[0] if recent else {}
-
-        if recent and len(recent) > 1:
-            pick = st.selectbox("Recent environments", range(len(recent)),
-                                format_func=lambda i: app.getEnvironmentId(recent[i]["portalUrl"]) or recent[i]["portalUrl"])
-            last = recent[pick]
-
         with st.form("connect", border=False):
             c1, c2 = st.columns(2)
-            portalUrl = c1.text_input("Smart Portal base URL", value=last.get("portalUrl") or os.environ.get("PORTAL_URL", ""),
+            portalUrl = c1.text_input("Smart Portal base URL", value=os.environ.get("PORTAL_URL", ""),
                                       placeholder="https://portalapp-web-12345e2-centralindia.siscompletedev.cloud")
-            emaUrl = c2.text_input("EMA base URL", value=last.get("emaUrl", ""),
+            emaUrl = c2.text_input("EMA base URL",
                                    placeholder="https://ema-12345e2-centralindia.siscompletedev.cloud",
                                    help="Leave empty to work it out from the portal URL")
             c3, c4 = st.columns(2)
@@ -384,7 +354,6 @@ with st.container(border=True, key="card-environment"):
                         app.createPortalSession(portalUrl.strip(), username.strip(), password)
                     state.credentials = {"portalUrl": portalUrl.strip(), "emaUrl": emaWeb, "emaApi": emaApi,
                                          "username": username.strip(), "password": password}
-                    rememberEnvironment(portalUrl.strip(), emaUrl.strip())
                     addLog(f"Connected to {app.getEnvironmentId(portalUrl)} as {username}")
                     st.rerun()
                 except Exception as error:
@@ -407,15 +376,18 @@ with teamColumn.container(border=True, key="card-team"):
             done=bool(teamEmails) and not invalid)
     teams = loadTeams()
 
-    savedTeams = app.loadTeams()
-
     def pickTeam(name):
         state.teamUsers = "\n".join(teams[name])
         state.teamPicker = False  # close the list
 
     def deleteTeam(name):
-        app.deleteTeam(name)
+        state.teams.pop(name, None)
         st.toast(f"Deleted team “{name}”")
+
+    def saveTeam(name, emails):
+        """Keep the team in this session only, replacing a team with the same name (any case)."""
+        state.teams = {n: m for n, m in state.teams.items() if n.casefold() != name.casefold()} | {name: emails}
+        st.toast(f"Saved {len(emails)} users as “{name}”")
 
     # A team list with a delete icon beside each saved team (a plain dropdown can't hold buttons)
     boxKey = {e.casefold() for e in teamEmails}
@@ -427,8 +399,8 @@ with teamColumn.container(border=True, key="card-team"):
             t1, t2 = st.columns([8, 1], vertical_alignment="center", gap="small")
             t1.button(f"{name} · {len(members)} users", key=f"pickTeam-{name}", type="tertiary", width="stretch",
                       on_click=pickTeam, args=(name,))
-            # Only teams saved in .env can be deleted, not the built-in DEFAULT_USERS list shown when there are none
-            if name in savedTeams:
+            # Only teams saved in this session can be deleted, not the built-in testData.USER_EMAILS list
+            if name in state.teams:
                 t2.button(":material/delete:", key=f"deleteTeam-{name}", help=f"Delete team “{name}”", type="tertiary",
                           on_click=deleteTeam, args=(name,))
     st.text_area("One email per line", key="teamUsers", height=180, label_visibility="collapsed",
@@ -450,9 +422,10 @@ with teamColumn.container(border=True, key="card-team"):
                 + (" · " + ", ".join(f"`{x}` ignored" for x in invalid[:5]) if invalid else ""))
     with s2.popover("Save as team", width="stretch"):
         newTeam = st.text_input("Team name", placeholder="e.g. Pit-Crew")
-        if st.button("Save", disabled=not (newTeam.strip() and teamEmails)):
-            app.saveTeam(newTeam.strip(), teamEmails)
-            st.success(f"Saved {len(teamEmails)} users as “{newTeam.strip()}”.")
+        st.caption("Kept only while this page is open. Not saved.")
+        # A callback, so the team list shows the new team straight away
+        st.button("Save", disabled=not (newTeam.strip() and teamEmails), on_click=saveTeam,
+                  args=(newTeam.strip(), teamEmails))
 
 
 # ---------- 3. Enterprises ----------

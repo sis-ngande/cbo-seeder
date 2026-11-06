@@ -259,7 +259,7 @@ def userPayload(email, userBusinessGroups):
     }
 
 
-def mapUsersToBusinessGroups(session, groups, emails=testData.USER_EMAILS, log=print):
+def mapUsersToBusinessGroups(session, groups, emails=(), log=print):
     """Give every user all of the enterprise's business groups, each with its profile. Returns (mapped, failed)."""
     groupIds = {g["name"]: g["businessGroupId"] for g in getJson(session, "BusinessGroupManagement/v01/BusinessGroups/")}
     profileIds = {p["permissionGroupName"]: p["permissionGroupId"] for p in getJson(session, "BusinessGroupPermissionGroups/v01/")}
@@ -291,7 +291,7 @@ def setEnterpriseLimits(session, recordLimit, businessGroupLimit, log=print):
                          log) is not None
 
 
-def setupEmaForEnterprise(session, enterpriseName, emails=testData.USER_EMAILS, log=print, limits=None):
+def setupEmaForEnterprise(session, enterpriseName, emails=(), log=print, limits=None):
     """Run the 4 EMA steps for one enterprise on an already logged-in EMA session. Returns a summary dict.
 
     limits: optional {"recordLimit": ..., "businessGroupLimit": ...} to override the test data values.
@@ -328,7 +328,7 @@ def describeResult(result):
 
 
 def setupEma(portalUrl, username, password, enterpriseNames=testData.EMA_ENTERPRISE_NAMES,
-             emails=testData.USER_EMAILS, log=print, headless=True, limitsByName=None, emaUrl=None):
+             emails=(), log=print, headless=True, limitsByName=None, emaUrl=None):
     """Log in to EMA for each enterprise and run its EMA setup. Returns {enterpriseName: summary or error}."""
     results = {}
     limitsByName = limitsByName or {}
@@ -345,38 +345,3 @@ def setupEma(portalUrl, username, password, enterpriseNames=testData.EMA_ENTERPR
             log(f"{enterpriseName}: {describeResult(results[enterpriseName])}")
     return results
 
-
-# ---------- Run from the terminal ----------
-
-def main():
-    import argparse
-    import os
-
-    from dotenv import load_dotenv
-
-    import app
-
-    load_dotenv()
-    parser = argparse.ArgumentParser(description="Set up Enterprise EMA preconditions for one team's users.")
-    team = parser.add_mutually_exclusive_group(required=True)
-    team.add_argument("--team", help="Saved team name (TEAM_<name> in .env), e.g. --team Pit-Crew")
-    team.add_argument("--users", help="Comma-separated emails, e.g. --users user1@sisfirst.com,user2@sisfirst.com")
-    parser.add_argument("enterprises", nargs="*", default=testData.EMA_ENTERPRISE_NAMES,
-                        help="Enterprise names to set up (default: Atlanta, Central, California, Georgia, Florida)")
-    parser.add_argument("--portal-url", default=os.environ.get("PORTAL_URL",
-                        "https://portalapp-web-367287e2-centralindia.siscompletedev.cloud"))
-    parser.add_argument("--show-browser", action="store_true", help="Show the browser during EMA login")
-    args = parser.parse_args()
-
-    emails = app.getTeamEmails(args.team, args.users)
-    print(f"Team: {args.team or 'custom'} ({len(emails)} users)")
-    results = setupEma(args.portal_url, os.environ["PORTAL_USER"], os.environ["PORTAL_PASSWORD"],
-                       args.enterprises, emails, headless=not args.show_browser)
-
-    print("\n===== Summary =====")
-    for name, result in results.items():
-        print(f"{'FAILED' if 'error' in result or result.get('groupsFailed') or result.get('usersFailed') or not result.get('limitsSet') else 'OK    '}  {name}: {result}")
-
-
-if __name__ == "__main__":
-    main()

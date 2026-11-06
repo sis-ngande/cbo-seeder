@@ -2,10 +2,6 @@
 
     python run cbo                              open the web page
     python run cbo --port 8600                  open the web page on another port
-    python run cbo --team pitCrew               run all 3 steps for a saved team (TEAM_pitCrew in .env)
-    python run cbo --users user1@sisfirst.com,...   run all 3 steps for these users
-    python run cbo --team pitCrew --only ema    run only some steps
-    python run cbo --help                       list the terminal options
 """
 import subprocess
 import sys
@@ -28,15 +24,13 @@ def main():
 
     # Always run with the project's .venv, even when started with the global "python"
     options = args[1:]
-    if options[:1] == ["--port"]:
-        if len(options) != 2 or not options[1].isdigit():
-            print("Give one port number, e.g. python run cbo --port 8600")
-            return 1
-        command = ["-m", "streamlit", "run", "ui.py", "--server.port", options[1]]
-    elif not options:
+    if not options:
         command = ["-m", "streamlit", "run", "ui.py"]
+    elif options[0] == "--port" and len(options) == 2 and options[1].isdigit():
+        command = ["-m", "streamlit", "run", "ui.py", "--server.port", options[1]]
     else:
-        command = ["app.py", *options]
+        print(USAGE)
+        return 1
     try:
         return subprocess.call([str(VENV_PYTHON), *command], cwd=HERE)
     except KeyboardInterrupt:

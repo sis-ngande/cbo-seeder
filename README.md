@@ -16,9 +16,7 @@ CBO Seeder drives the Smart Portal and EMA REST APIs to reset the test data that
 - [Launcher Commands](#launcher-commands)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
-- [Modes of Operation](#modes-of-operation)
-  - [Web Page](#web-page)
-  - [Terminal](#terminal)
+- [Using the Web Page](#using-the-web-page)
 - [Workflow Pipeline](#workflow-pipeline)
   - [The Three Steps](#the-three-steps)
   - [Per-Enterprise EMA Flow](#per-enterprise-ema-flow)
@@ -41,12 +39,12 @@ CBO Seeder drives the Smart Portal and EMA REST APIs to reset the test data that
 - **Three-step reset**: delete old test data, create Smart Portal data, set up EMA. Run all three in order, or one at a time
 - **Team-scoped**: only the users of the chosen team are deleted, re-created and mapped. Other users are left alone
 - **Pick only what your story needs**: choose which enterprises to create and set up in EMA, their tenants, record limit and business group limit
-- **Saved teams**: save a user list as a team, pick it later from a list, delete it with one click
+- **Teams for the session**: save a user list as a team, pick it from a list, delete it with one click. Teams are kept only while the page is open
 - **Live Output Log**: every API call with its method, endpoint, status and duration, updated live during a run, with filter, auto-scroll, copy and clear
 - **Safe by default**: DevEnterprise, protected users and the logged-in account are never deleted; a confirmation is required before deleting; a run stops when a step leaves the data unsafe for the next one
 - **Fresh login per step**: each step logs in again, so long runs don't hit an expired token
-- **Emails stay private**: every email lives in `.env`, never in code or git
-- **Web page or terminal**: the same steps run from the browser or the command line
+- **Nothing saved**: the login, emails and teams typed on the page live only in memory and are never written to disk. Only the shared automation accounts are in `testData.py`
+- **Password never saved**: the login is typed on the page and kept only in memory while the page is open
 
 ---
 
@@ -69,7 +67,7 @@ CBO Seeder drives the Smart Portal and EMA REST APIs to reset the test data that
 ### Prerequisites
 
 - **Python** 3.12 or later
-- Access to the Smart Portal environment, and the values for `.env` (ask the team)
+- Access to the Smart Portal environment
 
 ### Installation
 
@@ -79,10 +77,9 @@ cd pythonProject-cbo
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\python.exe -m playwright install chromium
-copy .env.example .env
 ```
 
-Then open `.env` and fill in the values (see [Environment Variables](#environment-variables)). They are not stored in the code or in git.
+Optionally, copy `.env.example` to `.env` to set a default environment (see [Environment Variables](#environment-variables)).
 
 ### Running
 
@@ -103,15 +100,7 @@ The page opens at **http://localhost:8501** (or the port you give).
 |---------|-------------|
 | `python run cbo` | Open the web page on port 8501 |
 | `python run cbo --port 8600` | Open the web page on another port |
-| `python run cbo --team pitCrew` | Run all 3 steps in the terminal for a saved team |
-| `python run cbo --users user1@sisfirst.com,user2@sisfirst.com` | Run all 3 steps for these users |
-| `python run cbo --team pitCrew --only ema` | Run only some steps (`delete`, `create`, `ema`) |
-| `python run cbo --team pitCrew --skip delete` | Skip steps, e.g. create + EMA and keep existing data |
-| `python run cbo --team pitCrew --portal-url <url>` | Use another environment |
-| `python run cbo --team pitCrew --show-browser` | Watch the EMA logins |
-| `python run cbo --help` | List the terminal options |
-| `python ema.py --team pitCrew "Atlanta State Enterprise"` | EMA setup for one enterprise |
-| `.\run`, `.\run --port 8600`, `.\run --only ema` | The same, through run.bat |
+| `.\run`, `.\run --port 8600` | The same, through run.bat |
 
 ---
 
@@ -119,7 +108,7 @@ The page opens at **http://localhost:8501** (or the port you give).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│             Web page (ui.py, Streamlit)  or  Terminal         │
+│                  Web page (ui.py, Streamlit)                  │
 │  Environment · Team users · Enterprises · Run · Output Log    │
 └───────────────┬──────────────────────────────┬───────────────┘
                 │                              │
@@ -137,7 +126,7 @@ The page opens at **http://localhost:8501** (or the port you give).
 └───────────────┬──────────────┘  └────────────┬───────────────┘
                 │                              │
                 │      testData.py  (enterprises, groups, limits)
-                │      .env         (login, emails, teams)
+                │      .env         (optional default URL)
                 │                              │
 ┌───────────────▼──────────────┐  ┌────────────▼───────────────┐
 │  Smart Portal API            │  │  EMA API                   │
@@ -151,46 +140,31 @@ The page opens at **http://localhost:8501** (or the port you give).
 
 ```
 pythonProject-cbo/
-├── run                  # Launcher: python run cbo [options]; always uses .venv
+├── run                  # Launcher: python run cbo [--port N]; always uses .venv
 ├── run.bat              # Same launcher for .\run
-├── app.py               # Smart Portal login, steps 1 and 2, saved teams, terminal command
+├── app.py               # Smart Portal login, steps 1 and 2
 ├── ema.py               # EMA browser login and step 3
 ├── testData.py          # Enterprises, tenants, profiles, business groups, limits (no emails)
 ├── ui.py                # Streamlit web page
 ├── requirements.txt     # Python packages
 ├── .env.example         # Template for .env (no values)
-├── .env                 # Your login, emails and teams (not in git)
+├── .env                 # Optional default URL (not in git)
 ├── .streamlit/
 │   └── config.toml      # Page theme (colors, font, radius)
-├── localSettings.json   # Recent environments on this machine (not in git)
 └── .gitignore
 ```
 
 ---
 
-## Modes of Operation
+## Using the Web Page
 
-### Web Page
-
-1. **Environment**: enter the Smart Portal URL, EMA URL (optional, worked out from the portal URL), username and password, then click **Connect**. Once connected, the card folds to one line (environment, tenants, EMA, user); open **Change environment or account** to switch. The rest of the page appears only after a successful connect.
-2. **Team users**: choose a saved team from the list (each has a delete icon), or paste emails, one per line. **Save as team** stores the list in `.env`. Changing the team resets the enterprises, previous results and the confirmation.
+1. **Environment**: enter the Smart Portal URL, EMA URL (optional, worked out from the portal URL), username and password, then click **Connect**. The password is kept only in memory while the page is open; it is never written to any file. Once connected, the card folds to one line (environment, tenants, EMA, user); open **Change environment or account** to switch. The rest of the page appears only after a successful connect.
+2. **Team users**: choose a team from the list (teams you saved have a delete icon), or paste emails, one per line. **Save as team** keeps the list in memory for this page only; it is gone when you close or refresh the page, and other users never see it. Changing the team resets the enterprises, previous results and the confirmation.
 3. **Enterprises**: tick **Create** for each enterprise your story needs. Ticking Create also ticks **EMA** and the enterprise's default tenants; you can still change tenants, record limit and group limit. Nothing is ticked at first.
 4. **Run**: tick the confirmation, then click **Run all 3 steps**, or run one step (**1 · Delete**, **2 · Create**, **3 · EMA**). A progress bar shows the current step, and each step's tile shows Done or Failed when it finishes.
-5. **Output Log**: appears after the first run. One row per line with **Time, Method, API, Message, Status, Duration**. Passed results show green, failures red. Filter by API, method, status or text; **Copy** copies the visible lines; **Clear** empties the log (off while a run is going). The same lines are printed in the terminal.
+5. **Output Log**: appears after the first run. One row per line with **Time, Method, API, Message, Status, Duration**. Passed results show green, failures red. Filter by API, method, status or text; **Copy** copies the visible lines; **Clear** empties the log (off while a run is going). The log is kept only in memory for this page and is never printed to the server console, so it is gone when the page is closed.
 
 Team users and Enterprises sit side by side to save scrolling.
-
-### Terminal
-
-Every run is for one team: a saved team name (a `TEAM_<name>` line in `.env`, upper/lower case ignored) or a list of emails. Only those users are deleted, created and mapped. A summary is printed at the end. If a delete fails, create and EMA don't run; if an enterprise fails to create, EMA doesn't run.
-
-```powershell
-python run cbo --team pitCrew                                  # all 3 steps for a saved team
-python run cbo --users user1@sisfirst.com,user2@sisfirst.com   # all 3 steps for these users
-python run cbo --team pitCrew --only ema                       # only EMA setup
-```
-
-The terminal runs all enterprises from `testData.py`; choosing enterprises is on the web page.
 
 ---
 
@@ -201,7 +175,7 @@ The terminal runs all enterprises from `testData.py`; choosing enterprises is on
 | Step | What it does | Replaces Cypress spec |
 |---|---|---|
 | **1. Delete old test data** | Deletes every enterprise except DevEnterprise, and the team's users (never protected users or the logged-in account) | `delete-smartportal-precondition.spec.ts` |
-| **2. Create Smart Portal data** | Adds the team's users (skipping already active ones) with the default permission group, grants access to tenants 1 and 2 for 14 days, syncs organizations for both tenants, then creates each chosen enterprise with its admins (the team plus the login account), tenants and the Auth0 IDP | `smartportal-precondition.spec.ts` |
+| **2. Create Smart Portal data** | Creates each typed user fresh: if the email already exists it is deleted first, then created (protected users and the login account are kept as they are) with the default permission group, grants access to tenants 1 and 2 for 14 days, syncs organizations for both tenants, then creates each chosen enterprise with its admins (the team plus the login account), tenants and the Auth0 IDP | `smartportal-precondition.spec.ts` |
 | **3. Set up EMA** | For each chosen enterprise: logs in to EMA, creates 3 business profiles, the business groups with their organizations, maps the team's users to the groups, and sets the limits | `ema-atlanta/central/california/georgia/florida-enterprise.spec.ts` |
 
 Step 1 deletes **all** test enterprises (they're shared and re-created in step 2), but only the team's users.
@@ -236,8 +210,8 @@ Open EMA login → enter email → (Microsoft sign-in / pick enterprise, in what
 ### Safety Rules
 
 - **DevEnterprise** (ID 1) is never deleted.
-- **Users in `PROTECTED_USERS`**, the `.env` login account, and the account logged in on the page are never deleted. Users without an email are kept too.
-- **Only the team's users** are deleted; everyone else is left alone.
+- **Users in `PROTECTED_USER_EMAILS`** (`testData.py`) and the account logged in on the page are never deleted. Users without an email are kept too.
+- **Only the team's users** are deleted; everyone else is left alone, and their emails never appear in the Output Log or anywhere else.
 - **Confirmation**: the page requires ticking "I checked with my team…" before step 1 can run.
 - **Wrong enterprise guard**: if EMA opens a different enterprise than the one asked for (for example because the login account isn't its admin), EMA setup stops instead of changing the wrong enterprise.
 - **Stop on unsafe state**: if a step fails in a way that leaves the data unsafe, the next steps don't run.
@@ -253,13 +227,11 @@ Open EMA login → enter email → (Microsoft sign-in / pick enterprise, in what
 | `createPortalSession(portalUrl, username, password)` | Azure AD token, then a portal session ID; returns a `requests` session with both headers |
 | `deleteEnterprises(session, log)` | Lists enterprises and deletes every unprotected one |
 | `deleteUsers(session, log, onlyEmails)` | Deletes the team's users, skipping protected users and the login account |
-| `createUsers(session, emails, log)` | Adds users that aren't active yet, with the default permission group |
+| `createUsers(session, emails, log)` | Deletes each typed user that already exists, then creates it with the default permission group |
 | `grantAccess(session, log)` | Requests access to tenants 1 and 2 |
 | `syncOrganizations(session, log)` | Syncs organization units for tenants 1 and 2 |
 | `createEnterprise(session, name, adminEmails, log, tenantIds)` | Creates one enterprise with admins, tenants and the Auth0 IDP |
 | `createSmartPortalData(...)` | Runs step 2 in Cypress order and returns a summary |
-| `loadTeams()`, `saveTeam()`, `deleteTeam()` | Read, add and remove `TEAM_<name>` lines in `.env` |
-| `main()` | The terminal command (`--team`, `--users`, `--only`, `--skip`, `--portal-url`, `--show-browser`) |
 
 Every call is logged as `label: status NNN [METHOD url]`, which the Output Log splits into columns.
 
@@ -286,7 +258,8 @@ Every call is logged as `label: status NNN [METHOD url]`, which the Output Log s
 | `TRACKER_PERMISSIONS`, `BUSINESS_PROFILES` | The 8 tracker permissions and the 3 profiles |
 | `EMA_ENTERPRISES` | Business groups, organizations and limits per enterprise |
 | `EMA_ENTERPRISE_NAMES` | Enterprises the Cypress EMA specs run |
-| `USER_EMAILS` | Read from `DEFAULT_USERS` in `.env`; no emails are stored in this file |
+| `USER_EMAILS` | Built-in team (shared automation accounts), shown when no teams are saved |
+| `PROTECTED_USER_EMAILS` | Users step 1 never deletes. The logged-in account is always protected too |
 
 Copied from `SISDomainsAutomation/cypress/fixtures/shared/precondition.td.ts`. `KEEP_ENTERPRISE_NAMES` in `app.py` lists enterprises that are never deleted.
 
@@ -295,7 +268,7 @@ Copied from `SISDomainsAutomation/cypress/fixtures/shared/precondition.td.ts`. `
 | Part | Description |
 |------|-------------|
 | Environment card | Connect form; folds to a summary once connected |
-| Team picker | Saved teams with delete icons, paste box, **Save as team** |
+| Team picker | Built-in team plus this session's teams (with delete icons), paste box, **Save as team** (memory only) |
 | Enterprise table | Create / tenants / limits / EMA per enterprise |
 | Run card | Step tiles, confirmation, run buttons, progress bar |
 | Output Log | Live table of every call; filter, auto-scroll, copy, clear |
@@ -306,7 +279,7 @@ The page reloads `app.py`, `ema.py` and `testData.py` on every refresh, so edits
 
 ## How Login Works
 
-- **Smart Portal**: gets an Azure AD token with the username and password (MSAL, using `CLIENT_ID`), then calls `ActiveDirectoryAuthentication/v01/Login` for a portal session ID. Calls send `Authorization: Bearer <token>` and `token: <session ID>`.
+- **Smart Portal**: gets an Azure AD token with the username and password (MSAL, using the Smart Portal's `CLIENT_ID` in `app.py`), then calls `ActiveDirectoryAuthentication/v01/Login` for a portal session ID. Calls send `Authorization: Bearer <token>` and `token: <session ID>`.
 - **EMA**: signs in through Auth0 and Microsoft, so `ema.py` opens the EMA login page in headless Chromium, enters the email, handles the Microsoft sign-in and the enterprise dropdown in whatever order EMA shows them, and checks that EMA opened the requested enterprise. It then reads `AuthToken`, `EnterpriseManagementSession` and `SELECTED_ENTERPRISE` from the page and makes plain API calls. It logs in once per enterprise, which takes about 15–30 seconds.
 
 The login account must be an admin of an enterprise for EMA to offer it, which is why step 2 adds the login account as an admin of every enterprise it creates.
@@ -327,7 +300,7 @@ Smart Portal calls go to `https://portalapp-api-<env>/api`; EMA calls go to `htt
 | | POST | `/EnterpriseManagement/v01/1/EnterpriseAdminUsers/{enterpriseId}` |
 | | POST | `/EnterpriseManagement/v01/1/AddTenant/` |
 | | POST | `/EnterpriseManagement/v01/1/Enterprises/{enterpriseId}/Register/` |
-| **Users** | GET | `/Users/v01/All` |
+| **Users** | GET | `/Users/v01/All` (only to find the typed emails' IDs; other users are dropped at once) |
 | | DELETE | `/Users/v01/{userId}` |
 | | POST | `/Users/v01/` |
 | | PUT | `/Users/v01/{userId}/PermissionGroups` |
@@ -351,26 +324,19 @@ Smart Portal calls go to `https://portalapp-api-<env>/api`; EMA calls go to `htt
 | File | Purpose |
 |------|---------|
 | `requirements.txt` | Python packages |
-| `.env` / `.env.example` | Login, emails and saved teams (see below) |
+| `.env` / `.env.example` | Optional default environment (see below) |
 | `.streamlit/config.toml` | Page theme: colors, Inter font, rounded corners; hides the Deploy button |
-| `localSettings.json` | Recent environments, per machine |
 | `.gitignore` | Ignores `.env`, `.venv/`, `localSettings.json`, `teams.json`, screenshots and caches |
 
 ---
 
 ## Environment Variables
 
-All in `.env`. Emails are sensitive, so they live only here, never in the code.
+Optional, in `.env`. Nothing typed on the page is stored here.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PORTAL_USER` | Yes | Account that logs in to Smart Portal and EMA |
-| `PORTAL_PASSWORD` | Yes | Its password |
-| `CLIENT_ID` | Yes | Azure AD app (client) ID of the Smart Portal |
 | `PORTAL_URL` | No | Default environment (Smart Portal web URL) |
-| `DEFAULT_USERS` | No | Comma-separated emails for the built-in team, shown when no teams are saved |
-| `PROTECTED_USERS` | No | Comma-separated emails step 1 never deletes. The login account is always protected too |
-| `TEAM_<name>` | No | A saved team, e.g. `TEAM_pitCrew=user1@sisfirst.com,user2@sisfirst.com`. Underscores in the name show as spaces. **Save as team** and the delete icon on the page add and remove these lines |
 
 ---
 
@@ -379,10 +345,10 @@ All in `.env`. Emails are sensitive, so they live only here, never in the code.
 | Problem | Fix |
 |---|---|
 | `ModuleNotFoundError` | Start with `python run cbo` (uses `.venv`), not `streamlit run` from the global Python. |
-| `Login failed: ...` (AADSTS error) | Check `PORTAL_USER`, `PORTAL_PASSWORD` and `CLIENT_ID` in `.env`. |
+| `Login failed: ...` (AADSTS error) | Check the username and password typed on the page. |
 | EMA setup stops with "EMA opened 'X' instead of 'Y'" | The login account isn't an admin of that enterprise. Run step 2 (Create) again; it adds the login account as admin. |
 | EMA login stops at `https://undefined/authorize` | The enterprise has no IDP yet. Run step 2 first and let it finish. |
-| EMA login times out | Run with `--show-browser` to watch where it stops. |
+| EMA login times out | Check the Output Log for the last EMA login step it reached. |
 | Status 401 in the middle of a run | The login expired. Run again; each step logs in fresh. |
 | Changes to `.env` or the theme don't show | Stop the page and start it again with `python run cbo`. |
 | Port already in use | Use another port: `python run cbo --port 8600`. |

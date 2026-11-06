@@ -3,23 +3,18 @@
 Copied from SISDomainsAutomation/cypress/fixtures/shared/precondition.td.ts
 (tdUserMailList, tdEnterprisesList, tdToneTenantEnterprise, tdTtwoTenantEnterprise).
 
-Emails are sensitive, so they are never kept in code: they come from the .env file.
+Only shared automation accounts are listed here. Emails typed on the page are kept in memory, never on disk.
 """
 import os
 
-from dotenv import load_dotenv
-
+# Optional settings (PORTAL_URL), next to this file
 ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-load_dotenv(ENV_FILE)
 
+# Built-in team, shown on the page when no teams are saved
+USER_EMAILS = ["SISAutomation@SISFIRST.COM", "SISAutomation2@SISFIRST.COM"]
 
-def envEmails(name):
-    """Emails from a comma-separated .env setting, e.g. DEFAULT_USERS=a@company.com,b@company.com."""
-    return [email.strip() for email in (os.environ.get(name) or "").split(",") if email.strip()]
-
-
-# Users created in Smart Portal and added as admins to every enterprise (DEFAULT_USERS in .env)
-USER_EMAILS = envEmails("DEFAULT_USERS")
+# Users that step 1 must never delete (the logged-in account is always kept too)
+PROTECTED_USER_EMAILS = ["internaloperation@sisfirst.com", "sisautomation@sisfirst.com"]
 
 # Enterprises created in Smart Portal, in Cypress order
 ENTERPRISE_NAMES = [
