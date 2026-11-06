@@ -2,12 +2,14 @@
 
 Run with:  python run cbo     (or: streamlit run ui.py)
 """
+import base64
 import importlib
 import os
 import time
 import re
 from datetime import datetime
 from html import escape
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -20,7 +22,10 @@ import testData
 for module in (testData, app, ema):
     importlib.reload(module)
 
-st.set_page_config(page_title="CBO Seeder", page_icon="🧪", layout="centered")
+LOGO_FILE = Path(__file__).parent / "assets" / "sis-logo.png"
+st.set_page_config(page_title="CBO Seeder", page_icon=str(LOGO_FILE), layout="centered")
+# Inline the logo in the header HTML (st.markdown can't load local files by path)
+LOGO_DATA = base64.b64encode(LOGO_FILE.read_bytes()).decode()
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@sisfirst\.com$", re.IGNORECASE)
 STEPS = {
@@ -45,57 +50,60 @@ st.markdown("""
   /* Labels and inputs */
   [data-testid="stWidgetLabel"] p { font-size: .95rem; font-weight: 500; color: #1f2937; }
   [data-testid="stTextInputRootElement"], [data-testid="stTextArea"] textarea, [data-baseweb="select"] > div {
-      background: #f1f4f9 !important; border: 1px solid #e8ecf3 !important; border-radius: 10px !important; }
+      background: #f1f1f3 !important; border: 1px solid #e6e6e9 !important; border-radius: 10px !important; }
   [data-testid="stTextInputRootElement"] input { font-size: 1rem; padding: 12px 14px; }
-  [data-testid="stTextInputRootElement"]:focus-within { border-color: #3d5bc9 !important; }
+  [data-testid="stTextInputRootElement"]:focus-within { border-color: #c9187d !important; }
 
   /* Buttons */
   .stButton button, .stDownloadButton button, [data-testid="stFormSubmitButton"] button {
       border-radius: 10px; font-weight: 600; padding: 10px 22px; min-height: 46px; }
+  /* Main buttons (Connect, Reset ... run all 3 steps) keep their own blue, not the magenta theme colour */
   .stButton button[kind="primary"], [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"],
   [data-testid="stFormSubmitButton"] button[kind="primary"] {
-      background: #3d5bc9; border-color: #3d5bc9; box-shadow: 0 2px 6px rgba(61, 91, 201, .25); }
-  .stButton button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button:hover { background: #3450b5; }
+      background: #3d5bc9; border-color: #3d5bc9; color: #fff; box-shadow: 0 2px 6px rgba(61, 91, 201, .25); }
+  .stButton button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button:hover {
+      background: #3450b5; border-color: #3450b5; color: #fff; }
+  /* Loaders match the buttons: the run progress bar and the "Logging in…" spinner */
+  [data-testid="stProgressBarTrack"] > div { background: #3d5bc9; }
+  [data-testid="stSpinnerIcon"] { border-color: rgba(61, 91, 201, .2); border-top-color: #3d5bc9; }
 
-  /* Header: gradient icon and gradient title */
+  /* Header: SIS logo and a title in the logo colours (magenta to orange) */
   .app-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-  .app-mark { width: 46px; height: 46px; border-radius: 12px; flex: none; display: grid; place-items: center;
-              background: linear-gradient(135deg, #3b6cf6 0%, #7c3aed 100%);
-              box-shadow: 0 8px 20px rgba(91, 76, 240, .25); }
+  .app-mark { height: 46px; width: auto; flex: none; border-radius: 6px; }
   .app-head h1 { display: inline-block; font-size: 1.45rem; font-weight: 700; margin: 0; padding: 0; line-height: 1.15;
-                 background: linear-gradient(90deg, #3b6cf6 0%, #8b5cf6 50%, #f97316 100%);
+                 background: linear-gradient(90deg, #c9187d 0%, #f58220 100%);
                  -webkit-background-clip: text; background-clip: text; color: transparent; }
   .app-head p { margin: 2px 0 0; color: #5b6472; font-size: .9rem; }
   .chip { margin-left: auto; font-size: .85rem; font-weight: 600; padding: 8px 16px; border-radius: 10px;
-          white-space: nowrap; background: #fff; border: 1px solid #e8ecf3; }
+          white-space: nowrap; background: #fff; border: 1px solid #e6e6e9; }
   .chip-ok { color: #15803d; }
   .chip-off { color: #5b6472; }
 
   /* Card titles */
   .sec { display: flex; align-items: center; gap: 10px; margin: 0 0 2px; }
-  .sec-n { width: 26px; height: 26px; border-radius: 8px; background: #eef2ff; color: #3d5bc9;
+  .sec-n { width: 26px; height: 26px; border-radius: 8px; background: #fce8f3; color: #c9187d;
            display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
-  .sec-n.done { background: #3d5bc9; color: #fff; }
-  .sec h3 { font-size: 1.3rem; font-weight: 700; margin: 0; padding: 0; color: #111827; }
+  .sec-n.done { background: #c9187d; color: #fff; }
+  .sec h3 { font-size: 1.3rem; font-weight: 700; margin: 0; padding: 0; color: #333333; }
   .sec-sub { color: #5b6472; font-size: .92rem; margin: 2px 0 12px 36px; }
 
   .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 6px 0 8px; }
-  .tile { border: 1px solid #e8ecf3; border-radius: 12px; padding: 12px 14px; background: #f8fafc; min-width: 0; }
+  .tile { border: 1px solid #e6e6e9; border-radius: 12px; padding: 12px 14px; background: #f8fafc; min-width: 0; }
   .tile b { display: block; font-size: .95rem; }
   .tile span { display: block; font-size: .8rem; color: #5b6472; }
   .tile i { font-style: normal; font-size: .75rem; font-weight: 600; padding: 2px 9px; border-radius: 99px;
             display: inline-block; margin-top: 8px; background: #eef1f5; color: #5b6472; }
   .tile.ok { border-color: #86efac; background: #f0fdf4; } .tile.ok i { background: #dcfce7; color: #15803d; }
   .tile.bad { border-color: #fca5a5; background: #fef2f2; } .tile.bad i { background: #fee2e2; color: #b91c1c; }
-  @media (max-width: 640px) { .tiles { grid-template-columns: 1fr; } .app-mark { width: 40px; height: 40px; } }
+  @media (max-width: 640px) { .tiles { grid-template-columns: 1fr; } .app-mark { height: 40px; } }
 
   .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .88rem; color: #5b6472; margin-top: 4px; }
-  .facts b { color: #111827; font-weight: 600; }
+  .facts b { color: #333333; font-weight: 600; }
 
   /* Team picker: a popover styled like a dropdown */
   .picker-label { font-size: .95rem; font-weight: 500; color: #1f2937; margin: 0 0 -6px; }
-  [class*="st-key-teamPicker"] button { justify-content: space-between; background: #f1f4f9; border: 1px solid #e8ecf3;
-                                        font-weight: 400; color: #111827; min-height: 42px; }
+  [class*="st-key-teamPicker"] button { justify-content: space-between; background: #f1f1f3; border: 1px solid #e6e6e9;
+                                        font-weight: 400; color: #333333; min-height: 42px; }
   [class*="st-key-teamPicker"] button > div { width: 100%; justify-content: space-between; }
   [class*="st-key-teamPicker"] button > div > div:first-child { flex: 1; text-align: left; justify-content: flex-start !important; }
   [class*="st-key-teamPicker"] button [data-testid="stMarkdownContainer"],
@@ -103,7 +111,7 @@ st.markdown("""
   [class*="st-key-pickTeam-"] button { justify-content: flex-start; font-weight: 500; padding: 6px 10px; min-height: 36px; }
   [class*="st-key-pickTeam-"] button > div, [class*="st-key-pickTeam-"] button p { width: 100%; justify-content: flex-start;
                                                                                   text-align: left; }
-  [class*="st-key-pickTeam-"] button:hover { background: #eef2ff; color: #3d5bc9; }
+  [class*="st-key-pickTeam-"] button:hover { background: #fce8f3; color: #c9187d; }
   [class*="st-key-deleteTeam-"] button { color: #b91c1c; min-height: 36px; padding: 6px; }
   [class*="st-key-deleteTeam-"] button:hover { background: #fee2e2; }
 
@@ -120,7 +128,7 @@ st.markdown("""
               margin: 28px 2px 8px; }
 
   /* Live step logs: same dark navy as the output log */
-  [data-testid="stCode"] pre { background: #0f172a !important; border-radius: 12px; }
+  [data-testid="stCode"] pre { background: #1f1f1f !important; border-radius: 12px; }
   [data-testid="stCode"] code { color: #cbd5e1 !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -309,8 +317,8 @@ chip = (f'<span class="chip chip-ok">● Connected · {app.getEnvironmentId(cred
         else '<span class="chip chip-off">Not connected</span>')
 st.markdown(f"""
 <div class="app-head">
-  <span class="app-mark"><svg width="20" height="20" viewBox="0 0 24 24"><path fill="#fb923c"
-    d="M13.5 2 5 13.5h6L10 22l9-12.5h-6.2z"/></svg></span>
+  <img class="app-mark" src="data:image/png;base64,{LOGO_DATA}" alt="SIS">
+
   <div><h1>CBO Seeder</h1><p>Smart Portal &amp; EMA test data seeder</p></div>
   {chip}
 </div>""", unsafe_allow_html=True)
@@ -546,31 +554,31 @@ with st.container(border=True, key="card-run"):
 # The log is drawn straight into the page (not a frame), so live updates swap rows in place without blinking.
 # Everything is scoped under #cbo-log so the styles don't leak into the rest of the page.
 LOG_CSS = """
-#cbo-log { background: #0f172a; border-radius: 16px; overflow: hidden; font-family: Inter, system-ui, sans-serif; }
+#cbo-log { background: #1f1f1f; border-radius: 16px; overflow: hidden; font-family: Inter, system-ui, sans-serif; }
 #cbo-log .bar { display: flex; gap: 12px; align-items: center; padding: 10px 12px 10px 100px; }
-#cbo-log .q { flex: 1; min-width: 0; background: #0b1222; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 10px;
+#cbo-log .q { flex: 1; min-width: 0; background: #1f1f1f; color: #e2e8f0; border: 1px solid #3a3a3a; border-radius: 10px;
               padding: 11px 16px; font: inherit; font-size: 15px; outline: none; }
 #cbo-log .q::placeholder { color: #64748b; }
-#cbo-log .q:focus { border-color: #3d5bc9; }
-#cbo-log label { color: #a5b4fc; font-size: 14px; display: flex; align-items: center; gap: 8px; white-space: nowrap;
+#cbo-log .q:focus { border-color: #c9187d; }
+#cbo-log label { color: #f2a5cf; font-size: 14px; display: flex; align-items: center; gap: 8px; white-space: nowrap;
                  cursor: pointer; margin: 0; }
-#cbo-log label input { width: 17px; height: 17px; accent-color: #2563eb; margin: 0; }
-#cbo-log button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 10px; padding: 9px 14px;
+#cbo-log label input { width: 17px; height: 17px; accent-color: #c9187d; margin: 0; }
+#cbo-log button { background: #3a3a3a; color: #e2e8f0; border: 1px solid #4a4a4a; border-radius: 10px; padding: 9px 14px;
                   font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-#cbo-log button:hover { background: #273449; }
+#cbo-log button:hover { background: #474747; }
 #cbo-log button:disabled { opacity: .45; cursor: not-allowed; }
 /* column-reverse keeps the view pinned to the newest line without any script */
-#cbo-log .scroll { height: 420px; overflow: auto; border-top: 1px solid #1e293b; display: flex; flex-direction: column-reverse; }
+#cbo-log .scroll { height: 420px; overflow: auto; border-top: 1px solid #3a3a3a; display: flex; flex-direction: column-reverse; }
 /* margin-bottom: auto keeps a short table at the top instead of the bottom */
 #cbo-log .inner { margin-bottom: auto; }
 #cbo-log table { width: 100%; border-collapse: collapse; font-size: 13px; color: #cbd5e1; margin: 0; border: none; }
-#cbo-log th { position: sticky; top: 0; z-index: 1; background: #111a2e; color: #e2e8f0; font-weight: 700; font-size: 14px;
-              text-align: left; padding: 11px 12px; border: none; border-bottom: 1px solid #1e293b; }
+#cbo-log th { position: sticky; top: 0; z-index: 1; background: #2a2a2a; color: #e2e8f0; font-weight: 700; font-size: 14px;
+              text-align: left; padding: 11px 12px; border: none; border-bottom: 1px solid #3a3a3a; }
 #cbo-log th:last-child, #cbo-log td:last-child { text-align: right; }
-#cbo-log td { padding: 6px 12px; border: none; border-bottom: 1px solid #16213a; vertical-align: top; background: transparent; }
+#cbo-log td { padding: 6px 12px; border: none; border-bottom: 1px solid #2b2b2b; vertical-align: top; background: transparent; }
 #cbo-log td.t { color: #94a3b8; white-space: nowrap; width: 90px; font-variant-numeric: tabular-nums; }
 #cbo-log td.mt { width: 70px; }
-#cbo-log td.api { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: 12px; color: #93c5fd;
+#cbo-log td.api { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: 12px; color: #f9b47a;
                   word-break: break-all; max-width: 380px; }
 #cbo-log td.m { font-family: Consolas, "Cascadia Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
 #cbo-log td.s { width: 90px; }
@@ -586,7 +594,7 @@ LOG_CSS = """
 #cbo-log .pill.bad { background: rgba(239,68,68,.15); color: #f87171; }
 #cbo-log tr.err td.m { color: #fca5a5; }
 #cbo-log tr.pass td.m { color: #86efac; font-weight: 600; }
-#cbo-log tr.head td.m { color: #a5b4fc; font-weight: 600; }
+#cbo-log tr.head td.m { color: #f2a5cf; font-weight: 600; }
 #cbo-log .nomatch td { color: #64748b; text-align: center; padding: 40px 0; }
 """
 

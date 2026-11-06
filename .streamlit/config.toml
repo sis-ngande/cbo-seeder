@@ -7,15 +7,15 @@ gatherUsageStats = false
 
 [theme]
 base = "light"
-primaryColor = "#3d5bc9"
-backgroundColor = "#f4f6fa"
+primaryColor = "#c9187d"  # SIS logo magenta
+backgroundColor = "#f5f5f6"
 # Filled input boxes, like the Ignition seeder
-secondaryBackgroundColor = "#f1f4f9"
-textColor = "#111827"
+secondaryBackgroundColor = "#f1f1f3"
+textColor = "#333333"  # SIS logo charcoal
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
 headingFontWeights = 700
 baseRadius = "10px"
 buttonRadius = "10px"
-borderColor = "#e5e9f0"
+borderColor = "#e6e6e9"
 showWidgetBorder = false
-codeBackgroundColor = "#0f172a"
+codeBackgroundColor = "#1f1f1f"
