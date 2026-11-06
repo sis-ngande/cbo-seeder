@@ -1,4 +1,4 @@
-# ⚡ CBO Seeder
+# CBO Seeder
 
 **Automated precondition seeder for Smart Portal and Enterprise EMA.**
 
@@ -146,6 +146,8 @@ pythonProject-cbo/
 ├── ema.py               # EMA browser login and step 3
 ├── testData.py          # Enterprises, tenants, profiles, business groups, limits (no emails)
 ├── ui.py                # Streamlit web page
+├── assets/
+│   └── sis-logo.png     # Logo in the page header and browser tab
 ├── requirements.txt     # Python packages
 ├── .env.example         # Template for .env (no values)
 ├── .env                 # Optional default URL (not in git)
